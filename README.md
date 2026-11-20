@@ -2,7 +2,7 @@
 
 Bare-Metal x86_64 Long Mode Micro-Kernel Stub
 
-A bootable, freestanding Multiboot/UEFI micro-kernel harness written in 100% pure Zig without external assembly files or NASM toolchains.
+A freestanding x86_64 long-mode micro-kernel harness written in pure Zig without external assembly files or NASM toolchains. It carries multiboot1 and multiboot2 headers, but it has no 32-to-64-bit startup code yet, so a loader that enters in 32-bit protected mode (GRUB, QEMU `-kernel`) cannot start it directly.
 
 ## Architecture
 
@@ -29,12 +29,9 @@ Physical layout of the ReleaseSmall kernel image as reported by `realgar inspect
 
 The linker script exports `__kernel_start` and `__kernel_end` around this range so the kernel can keep it out of the free frame pool.
 
-## Running with QEMU
+## Booting
 
-```bash
-# Launch kernel with QEMU serial output directed to stdio
-qemu-system-x86_64 -kernel zig-out/bin/realgar.elf -serial stdio -display none
-```
+There is no supported emulator command yet. QEMU's `-kernel` option only loads multiboot1 images in 32-bit mode and rejects ELF64 files, and GRUB also enters multiboot kernels in 32-bit protected mode. Booting needs a 32-to-64-bit trampoline, which is not implemented.
 
 `_start` is 64-bit code and expects to be entered in long mode, with the multiboot2 magic in RDI and the boot information address in RSI (System V convention), for example from a 32-to-64-bit loader trampoline. Booting under an emulator is not covered by the automated tests; the boot-time logic is tested on the host instead (see below).
 
