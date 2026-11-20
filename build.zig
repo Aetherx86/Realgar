@@ -44,4 +44,13 @@ pub fn build(b: *std.Build) void {
     const run_unit_tests = b.addRunArtifact(unit_tests);
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_unit_tests.step);
+
+    // Validate the multiboot headers of the freshly linked kernel image with the
+    // host inspector; the step fails if no loadable multiboot2 header is found.
+    const inspect_kernel = b.addRunArtifact(exe);
+    inspect_kernel.addArg("inspect");
+    inspect_kernel.addArtifactArg(kernel);
+    inspect_kernel.expectExitCode(0);
+    const inspect_step = b.step("inspect", "Check the kernel ELF for a loadable multiboot2 header");
+    inspect_step.dependOn(&inspect_kernel.step);
 }

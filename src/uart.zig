@@ -47,7 +47,7 @@ pub inline fn inb(port: u16) u8 {
         );
     } else {
         // Mock read for unit testing (transmitter always ready)
-        if (port == COM1_BASE + @intFromEnum(Register.lsr)) {
+        if (port == COM1_BASE + @backingInt(Register.lsr)) {
             return LsrFlags.TRANSMITTER_EMPTY;
         }
         return 0;
@@ -55,14 +55,14 @@ pub inline fn inb(port: u16) u8 {
 }
 
 // Mock test ring buffer for host unit tests
-var mock_tx_buffer: [1024]u8 = undefined;
+var mock_tx_buffer: [16384]u8 = undefined;
 var mock_tx_len: usize = 0;
 var mock_dlab: bool = false;
 
 fn mockOutb(port: u16, val: u8) void {
-    if (port == COM1_BASE + @intFromEnum(Register.lcr)) {
+    if (port == COM1_BASE + @backingInt(Register.lcr)) {
         mock_dlab = (val & 0x80) != 0;
-    } else if (port == COM1_BASE + @intFromEnum(Register.data)) {
+    } else if (port == COM1_BASE + @backingInt(Register.data)) {
         if (!mock_dlab and mock_tx_len < mock_tx_buffer.len) {
             mock_tx_buffer[mock_tx_len] = val;
             mock_tx_len += 1;
@@ -86,29 +86,29 @@ pub const SerialPort = struct {
         const self = SerialPort{ .base_port = base };
 
         // Disable all interrupts
-        outb(base + @intFromEnum(Register.ier), 0x00);
+        outb(base + @backingInt(Register.ier), 0x00);
 
         // Enable DLAB (set baud rate divisor)
-        outb(base + @intFromEnum(Register.lcr), 0x80);
+        outb(base + @backingInt(Register.lcr), 0x80);
 
         // Set divisor to 1 (115200 baud)
-        outb(base + @intFromEnum(Register.data), 0x01); // Divisor Low Byte
-        outb(base + @intFromEnum(Register.ier), 0x00); // Divisor High Byte
+        outb(base + @backingInt(Register.data), 0x01); // Divisor Low Byte
+        outb(base + @backingInt(Register.ier), 0x00); // Divisor High Byte
 
         // 8 bits, no parity, one stop bit (8N1)
-        outb(base + @intFromEnum(Register.lcr), 0x03);
+        outb(base + @backingInt(Register.lcr), 0x03);
 
         // Enable FIFO, clear TX/RX, 14-byte threshold
-        outb(base + @intFromEnum(Register.fcr), 0xC7);
+        outb(base + @backingInt(Register.fcr), 0xC7);
 
         // RTS/DSR set
-        outb(base + @intFromEnum(Register.mcr), 0x0B);
+        outb(base + @backingInt(Register.mcr), 0x0B);
 
         return self;
     }
 
     pub fn isTransmitEmpty(self: *const SerialPort) bool {
-        return (inb(self.base_port + @intFromEnum(Register.lsr)) & LsrFlags.TRANSMITTER_EMPTY) != 0;
+        return (inb(self.base_port + @backingInt(Register.lsr)) & LsrFlags.TRANSMITTER_EMPTY) != 0;
     }
 
     pub fn writeByte(self: *const SerialPort, b: u8) void {
@@ -117,7 +117,7 @@ pub const SerialPort = struct {
                 asm volatile ("pause");
             }
         }
-        outb(self.base_port + @intFromEnum(Register.data), b);
+        outb(self.base_port + @backingInt(Register.data), b);
     }
 
     pub fn writeString(self: *const SerialPort, str: []const u8) void {
@@ -137,7 +137,26 @@ pub const SerialPort = struct {
             self.writeByte(hex_chars[nibble]);
         }
     }
+
+    /// Writes `val` in decimal with no padding.
+    pub fn writeDecU64(self: *const SerialPort, val: u64) void {
+        var buf: [20]u8 = undefined;
+        self.writeString(formatDecU64(&buf, val));
+    }
 };
+
+/// Formats `val` in decimal into the tail of `buf` and returns the digits.
+pub fn formatDecU64(buf: *[20]u8, val: u64) []const u8 {
+    var i: usize = buf.len;
+    var v = val;
+    while (true) {
+        i -= 1;
+        buf[i] = '0' + @as(u8, @intCast(v % 10));
+        v /= 10;
+        if (v == 0) break;
+    }
+    return buf[i..];
+}
 
 test "Serial port initialization and write" {
     resetMockTx();
@@ -155,4 +174,26 @@ test "Serial hex formatting" {
 
     const out = getMockTxOutput();
     try std.testing.expectEqualStrings("0xDEADBEEFCAFEBABE", out);
+}
+
+test "Serial decimal formatting covers zero and the full u64 range" {
+    var buf: [20]u8 = undefined;
+    try std.testing.expectEqualStrings("0", formatDecU64(&buf, 0));
+    try std.testing.expectEqualStrings("7", formatDecU64(&buf, 7));
+    try std.testing.expectEqualStrings("1000", formatDecU64(&buf, 1000));
+    try std.testing.expectEqualStrings("18446744073709551615", formatDecU64(&buf, std.math.maxInt(u64)));
+
+    var prng = std.Random.DefaultPrng.init(0xDEC);
+    const rand = prng.random();
+    var ref: [32]u8 = undefined;
+    for (0..2000) |_| {
+        const v = rand.int(u64) >> rand.int(u6);
+        const expected = try std.fmt.bufPrint(&ref, "{d}", .{v});
+        try std.testing.expectEqualStrings(expected, formatDecU64(&buf, v));
+    }
+
+    resetMockTx();
+    const serial = SerialPort.init(COM1_BASE);
+    serial.writeDecU64(4096);
+    try std.testing.expectEqualStrings("4096", getMockTxOutput());
 }

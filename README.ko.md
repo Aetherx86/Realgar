@@ -33,6 +33,15 @@ zig build test
 zig build -Doptimize=ReleaseSmall
 ```
 
+## 0.2.0 변경 사항
+
+- 커널 이미지에 multiboot2 헤더를 추가했습니다 (메모리 맵, 커맨드 라인, 부트로더 이름, 기본 메모리 정보 요청 태그 포함).
+- 범위 검사를 거치는 multiboot2 헤더 검증기와 부트 정보 파서 (`src/multiboot2.zig`).
+- multiboot2 메모리 맵으로 초기화하는 비트맵 물리 프레임 할당기 (`src/pmm.zig`), 정렬된 연속 할당과 이중 해제 검출 지원.
+- 4 KiB, 2 MiB, 1 GiB 페이지를 지원하는 4단계 페이지 테이블 매퍼 (`src/paging.zig`), 아이덴티티 및 상위 절반(higher-half) 커널 레이아웃 생성.
+- `realgar inspect <image> [--json]` 명령과 `zig build inspect` 단계로 커널 ELF의 multiboot 헤더와 적재 주소를 확인합니다.
+- `zig build test`로 46개의 호스트 테스트를 실행합니다.
+
 ## 라이선스
 
 MIT License - Copyright (c) 2026 Jeong Hoon Kim
